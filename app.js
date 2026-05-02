@@ -127,7 +127,12 @@ app.post('/getCarbonPrice', async (req, res) => {
 //   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
 //   credentials: true // Allow credentials (cookies) to be included with requests
 // }));
-
+app.get('/', (req, res) => {
+  res.json({
+    message: "FYP Individual Backend is Running 🚀",
+    status: "OK"
+  });
+});
 
 const corsOptions = {
   origin: ['http://localhost:5173', 'https://learn-lime-three.vercel.app', '*'], 
