@@ -135,6 +135,8 @@ const corsOptions = {
   credentials: true // Allow credentials
 };
 
+console.log("userRouter:", userRouter);
+console.log("IndividualRouter:", IndividualRouter);
 app.use('/users', userRouter)
 app.use("/individual", IndividualRouter);
 
