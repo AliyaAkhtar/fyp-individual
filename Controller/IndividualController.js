@@ -5,18 +5,23 @@ const axios = require("axios");
 const Qexecution = require("./query");
 // const { buildTxData, enc } = require("../Blockchain/contractService");
 // const { marketplace } = enc;
+// const multer = require("multer");
 
-const upload = multer({ dest: "uploads/" });
+const upload = multer({
+  storage: multer.memoryStorage()
+});
+// const upload = multer({ dest: "uploads/" });
 
 // const upload = multer({ storage: multer.memoryStorage() });
 
-exports.uploadBill = upload.single("bill");
+// exports.uploadBill = upload.single("bill");
+const uploadBill = upload.single("bill");
 
 /* =========================================
    OCR + GenAI Electricity Bill Analysis
 ========================================= */
 
-exports.analyzeElectricityBill = async (req, res) => {
+const analyzeElectricityBill = async (req, res) => {
   try {
     const { user_id } = req.body;
 
@@ -211,7 +216,7 @@ exports.analyzeElectricityBill = async (req, res) => {
    Carbon Calculation + Credit Suggestion
 ========================================= */
 
-exports.calculateCarbonOffset = async (req, res) => {
+const calculateCarbonOffset = async (req, res) => {
   try {
     const { bill_id } = req.params;
 
@@ -309,7 +314,7 @@ exports.calculateCarbonOffset = async (req, res) => {
    View Marketplace Listings
 ========================================= */
 
-exports.viewMarketplace = async (req, res) => {
+const viewMarketplace = async (req, res) => {
   try {
     const listings = await Qexecution.queryExecute(
       `SELECT 
@@ -344,7 +349,7 @@ exports.viewMarketplace = async (req, res) => {
   }
 };
 
-exports.createSellOrderIndividual = async (req, res) => {
+const createSellOrderIndividual = async (req, res) => {
   try {
     const { user_id } = req.params;
     const { amount, price } = req.body;
@@ -433,7 +438,7 @@ exports.createSellOrderIndividual = async (req, res) => {
   }
 };
 
-exports.getIndividualFullSummary = async (req, res) => {
+const getIndividualFullSummary = async (req, res) => {
   try {
     const { user_id } = req.params;
 
@@ -661,3 +666,12 @@ function extract(text, patterns) {
   }
   return null;
 }
+
+module.exports = {
+  uploadBill,
+  analyzeElectricityBill,
+  calculateCarbonOffset,
+  viewMarketplace,
+  createSellOrderIndividual,
+  getIndividualFullSummary
+};
