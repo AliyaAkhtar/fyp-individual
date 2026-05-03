@@ -3,21 +3,22 @@ const { genSaltSync, hashSync, compareSync } = require('bcrypt');
 const { sign, verify } = require('jsonwebtoken');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
-const Qexecution = require("../../Controller/query");
+const Qexecution = require("./../../Controllers/query");
 
 module.exports = {
 
     createUser: (req, res) => {
         const body = req.body;
-        // body.password = hashSync(body.password, 10);
+        console.log(`[SIGNUP] Request received. role=${body.role} email=${body.email}`);
         create(body, (err, results) => {
             if (err) {
-                console.log(err);
+                console.error('[SIGNUP] Error during user creation:', err);
                 return res.status(500).json({
                     status: "fail",
-                    message: "Database connection error"
+                    message: "Database connection error: " + err.message
                 })
             }
+            console.log('[SIGNUP] SUCCESS. Result:', JSON.stringify(results));
             return res.status(200).json({
                 status: "success",
                 data: results
@@ -49,21 +50,26 @@ module.exports = {
 
     login: async (req, res) => {
         const body = req.body;
+        console.log(`[LOGIN] Attempt for email: ${body.email}`);
 
         try {
             // Fetch user by email
+            console.log('[LOGIN] Step 1: Querying DB for user by email...');
             const results = await new Promise((resolve, reject) => {
                 getUserByEmail(body.email, (error, result) => {
                     if (error) {
+                        console.error('[LOGIN] DB error during getUserByEmail:', error);
                         reject(error);
                     } else {
                         resolve(result);
                     }
                 });
             });
+            console.log('[LOGIN] Step 1 done. User found:', results ? `id=${results.registration_id} role=${results.role}` : 'null');
 
             // If no user is found, return an error response
             if (!results) {
+                console.log('[LOGIN] No user found for email:', body.email);
                 return res.status(400).json({
                     status: "fail",
                     message: "Invalid email or password",
@@ -71,10 +77,9 @@ module.exports = {
             }
 
             // Verify password
-            // console.log("DB Results:", results);
-            // console.log("Plain password from request:", body.password);
-
+            console.log('[LOGIN] Step 2: Verifying password...');
             const isPasswordValid = compareSync(body.password, results.password_hash);
+            console.log('[LOGIN] Step 2 done. Password valid:', isPasswordValid);
             if (!isPasswordValid) {
                 return res.status(400).json({
                     status: "fail",
@@ -82,10 +87,17 @@ module.exports = {
                 });
             }
 
+            // Block login for unverified industry / landowner (project_owner)
+            if (['industry', 'project_owner'].includes(results.role) && results.kyc_status !== 1) {
+                console.log(`[LOGIN] Account not verified. role=${results.role} kyc_status=${results.kyc_status}`);
+                return res.status(403).json({
+                    status: "fail",
+                    message: "Your account has not been verified yet. Please wait for government approval before logging in.",
+                });
+            }
+
             // Remove the password from the user object before proceeding
             results.password = undefined;
-
-            // After password check and results.password = undefined;
 
             let roleTable = '';
             switch (results.role) {
@@ -103,52 +115,58 @@ module.exports = {
                     break;
             }
 
+            console.log(`[LOGIN] Step 3: Fetching role data from table '${roleTable}'...`);
             let roleData = {};
             if (roleTable) {
                 const rows = await Qexecution.queryExecute(
                     `SELECT * FROM ${roleTable} WHERE registration_id = ?`,
                     [results.registration_id]
                 );
-
-                // console.log(rows);
-
                 roleData = rows[0] || {};
+                console.log('[LOGIN] Step 3 done. role_data keys:', Object.keys(roleData));
             }
 
             // Generate JSON Web Token (JWT)
+            console.log('[LOGIN] Step 4: Generating JWT...');
             const jsontoken = sign({ result: results }, "eraj20", {
                 expiresIn: "1h",
             });
 
             // Check if the user is already logged in
-            await checkIfLoggedInByEmail(results.email);
+            console.log('[LOGIN] Step 5: checkIfLoggedInByEmail...');
+            await checkIfLoggedInByEmail(results.registration_id);
+            console.log('[LOGIN] Step 5 done.');
 
             // Encrypt the token
             const encryptedToken = crypto.createHash('sha256').update(jsontoken).digest('hex');
 
             // Store the session using loginsession
+            console.log('[LOGIN] Step 6: Storing session...');
             await new Promise((resolve, reject) => {
-                loginSession(encryptedToken, results.email, (error, result) => {
+                loginSession(encryptedToken, results.registration_id, (error, result) => {
                     if (error) {
+                        console.error('[LOGIN] loginSession error:', error);
                         reject(error);
                     } else {
                         resolve(result);
                     }
                 });
             });
+            console.log('[LOGIN] Step 6 done. Session stored.');
 
             // Respond with success
+            console.log(`[LOGIN] SUCCESS for ${results.email} (${results.role})`);
             return res.status(200).json({
                 status: "success",
                 message: "Login successful",
                 email: results.email,
-                position: results.position,
+                position: results.role,
                 token: jsontoken, // Optionally include the unencrypted token for client-side use
                 role_data: roleData,
             });
 
         } catch (error) {
-            console.error("Error during login:", error);
+            console.error("[LOGIN] FATAL error:", error);
             return res.status(500).json({
                 status: "fail",
                 message: "An error occurred during login. Please try again later.",

@@ -1,12 +1,43 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const { checkToken } = require("./auth/token_validation")
 const query = require("./query");
 const userRouter = require('./api/users/user.router');
-const IndividualRouter = require("./Router/IndividualRouter");
+const IndividualRouter = require("./Routers/IndividualRouter");
+const IndustryRouter = require('./Routers/IndustryRouter');
+const GovernmentRouter = require('./Routers/GovernmentRouter');
+const LandownerRouter = require('./Routers/LandownerRouter');
+const DashboardRouter = require("./Routers/DashboardRouter");
 
 let app = express();
 
+const allowedOrigins = new Set([
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:8080',
+  'http://127.0.0.1:8080',
+  'http://localhost:8081',
+  'http://127.0.0.1:8081',
+  'http://localhost:3000',
+  'https://learn-lime-three.vercel.app'
+]);
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like Postman/mobile) or from allowed origins
+    // Also allow any localhost origin dynamically
+    if (!origin || allowedOrigins.has(origin) || /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) {
+      return callback(null, true);
+    }
+    console.warn('[CORS] Blocked origin:', origin);
+    return callback(new Error('Not allowed by CORS'));
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  optionsSuccessStatus: 204
+};
 
 // Middleware to enable CORS
 app.use((req, res, next) => {
@@ -134,16 +165,20 @@ app.get('/', (req, res) => {
   });
 });
 
-const corsOptions = {
-  origin: ['http://localhost:5173', 'https://learn-lime-three.vercel.app', '*'], 
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'], // Allowed methods
-  credentials: true // Allow credentials
-};
+// const corsOptions = {
+//   origin: ['http://localhost:5173', 'https://learn-lime-three.vercel.app', '*'], 
+//   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'], // Allowed methods
+//   credentials: true // Allow credentials
+// };
 
-console.log("userRouter:", userRouter);
-console.log("IndividualRouter:", IndividualRouter);
+// console.log("userRouter:", userRouter);
+// console.log("IndividualRouter:", IndividualRouter);
 app.use('/users', userRouter)
 app.use("/individual", IndividualRouter);
+app.use('/dashboard', DashboardRouter);
+app.use('/landowner', LandownerRouter);
+app.use('/industry', IndustryRouter);
+app.use('/government',GovernmentRouter);
 
 const port = process.env.PORT || 2000;
 
@@ -151,3 +186,5 @@ const port = process.env.PORT || 2000;
 app.listen(port, () => {
   console.log("Server has started on port 2000");
 });
+
+require("./Blockchain/eventListener");
