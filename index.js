@@ -129,7 +129,7 @@ app.post('/getCarbonPrice', async (req, res) => {
 // }));
 app.get('/', (req, res) => {
   res.json({
-    message: "FYP Individual Backend is Running 🚀",
+    message: "FYP Backend is Running 🚀",
     status: "OK"
   });
 });
