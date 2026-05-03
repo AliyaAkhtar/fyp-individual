@@ -145,9 +145,9 @@ console.log("IndividualRouter:", IndividualRouter);
 app.use('/users', userRouter)
 app.use("/individual", IndividualRouter);
 
-// Start server
-// app.listen(2000, () => {
-//   console.log("Server has started on port 2000");
-// });
+const port = process.env.PORT || 2000;
 
-module.exports = app;
+// Start server
+app.listen(port, () => {
+  console.log("Server has started on port 2000");
+});

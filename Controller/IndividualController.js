@@ -5,23 +5,24 @@ const axios = require("axios");
 const Qexecution = require("./query");
 // const { buildTxData, enc } = require("../Blockchain/contractService");
 // const { marketplace } = enc;
-// const multer = require("multer");
+
+const path = require("path");
+
+const uploadPath =
+  process.env.NODE_ENV === "production"
+    ? "/tmp"
+    : path.join(__dirname, "uploads");
 
 const upload = multer({
-  storage: multer.memoryStorage()
+  dest: uploadPath
 });
-// const upload = multer({ dest: "uploads/" });
 
-// const upload = multer({ storage: multer.memoryStorage() });
-
-// exports.uploadBill = upload.single("bill");
-const uploadBill = upload.single("bill");
-
+exports.uploadBill = upload.single("bill");
 /* =========================================
    OCR + GenAI Electricity Bill Analysis
 ========================================= */
 
-const analyzeElectricityBill = async (req, res) => {
+exports.analyzeElectricityBill = async (req, res) => {
   try {
     const { user_id } = req.body;
 
@@ -126,11 +127,8 @@ const analyzeElectricityBill = async (req, res) => {
     const tokensToGive = Number((co2_saved / CREDIT_VALUATION).toFixed(6));
     const eligible_for_credit = tokensToGive > 0 ? 1 : 0;
 
-    // fs.unlinkSync(imagePath);
+    fs.unlinkSync(imagePath);
 
-    if (fs.existsSync(imagePath)) {
-      fs.unlinkSync(imagePath);
-    }
 
     /* =========================
        SAVE BILL
@@ -167,6 +165,14 @@ const analyzeElectricityBill = async (req, res) => {
       );
 
       token_id = tokenResult.insertId;
+
+      await Qexecution.queryExecute(
+        `INSERT INTO NormalUserOffset (user_id, total_offset)
+          VALUES (?, ?)
+          ON DUPLICATE KEY UPDATE
+          total_offset = total_offset + VALUES(total_offset)`,
+        [user_id, co2_saved]
+      );
 
       // await Qexecution.queryExecute(
       //   `INSERT INTO token_transactions
@@ -216,7 +222,7 @@ const analyzeElectricityBill = async (req, res) => {
    Carbon Calculation + Credit Suggestion
 ========================================= */
 
-const calculateCarbonOffset = async (req, res) => {
+exports.calculateCarbonOffset = async (req, res) => {
   try {
     const { bill_id } = req.params;
 
@@ -314,18 +320,27 @@ const calculateCarbonOffset = async (req, res) => {
    View Marketplace Listings
 ========================================= */
 
-const viewMarketplace = async (req, res) => {
+exports.viewMarketplace = async (req, res) => {
   try {
+    const { user_id } = req.params; // or req.user.user_id if using auth middleware
+
+    if (!user_id) {
+      return res.status(400).json({
+        status: "fail",
+        message: "user_id is required"
+      });
+    }
+
     const listings = await Qexecution.queryExecute(
       `SELECT 
-      m.order_id AS listing_id,
-      m.price,
-      m.status,
-      m.amount,
+        m.order_id AS listing_id,
+        m.price,
+        m.status,
+        m.amount,
 
-      u.name AS user_name,
-      i.industry_name,
-      p.project_name
+        u.name AS user_name,
+        i.industry_name,
+        p.project_name
 
       FROM marketplace m
 
@@ -333,13 +348,16 @@ const viewMarketplace = async (req, res) => {
       LEFT JOIN industries i ON m.industry_id = i.industry_id
       LEFT JOIN projects p ON m.owner_id = p.owner_id
 
-      WHERE m.status = 'open'`
+      WHERE m.status = 'open'
+      AND m.user_id = ?`,
+      [user_id]
     );
 
     res.json({
       status: "success",
       listings
     });
+
   } catch (err) {
     console.error("Marketplace Error:", err);
     res.status(500).json({
@@ -349,7 +367,7 @@ const viewMarketplace = async (req, res) => {
   }
 };
 
-const createSellOrderIndividual = async (req, res) => {
+exports.createSellOrderIndividual = async (req, res) => {
   try {
     const { user_id } = req.params;
     const { amount, price } = req.body;
@@ -438,7 +456,7 @@ const createSellOrderIndividual = async (req, res) => {
   }
 };
 
-const getIndividualFullSummary = async (req, res) => {
+exports.getIndividualFullSummary = async (req, res) => {
   try {
     const { user_id } = req.params;
 
@@ -666,12 +684,3 @@ function extract(text, patterns) {
   }
   return null;
 }
-
-module.exports = {
-  uploadBill,
-  analyzeElectricityBill,
-  calculateCarbonOffset,
-  viewMarketplace,
-  createSellOrderIndividual,
-  getIndividualFullSummary
-};

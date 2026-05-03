@@ -9,7 +9,7 @@ router.route('/analyze-bill')
 router.route('/calculate-offset/:bill_id')
   .post(individualController.calculateCarbonOffset);
 
-router.route('/marketplace')
+router.route('/marketplace/:user_id')
   .get(individualController.viewMarketplace);
 
 // POST /individual/blockchain/buy  { listing_id } → buyListing(listingId)
