@@ -3,6 +3,7 @@ const multer = require("multer");
 const fs = require("fs");
 const axios = require("axios");
 const FormData = require("form-data");
+const ARIMA = require("arima");
 const {
   buildTxData,
   enc,
@@ -185,6 +186,18 @@ exports.processIndustryEmissions = async (req, res) => {
     );
 
     /* =========================
+       6.6 MONTHLY GUARD — prevent duplicate token minting per month
+    ========================= */
+    const alreadyMintedThisMonth = await Qexecution.queryExecute(
+      `SELECT industry_id FROM industry_monthly_data
+       WHERE industry_id = ?
+       AND month = DATE_FORMAT(CURDATE(), '%Y-%m-01')
+       LIMIT 1`,
+      [industry_id]
+    );
+    const monthAlreadyProcessed = (alreadyMintedThisMonth.rows || alreadyMintedThisMonth || []).length > 0;
+
+    /* =========================
        7. TOKEN BALANCE
     ========================= */
     const tokenResult = await Qexecution.queryExecute(
@@ -212,7 +225,7 @@ exports.processIndustryEmissions = async (req, res) => {
     const allowedArea = threshold.area * area_sqft;
     const allowedEmission = Math.min(allowedProd, allowedArea);
 
-    if (totalCO2Emitted < allowedEmission) {
+    if (totalCO2Emitted < allowedEmission && !monthAlreadyProcessed) {
       const savedTons = allowedEmission - totalCO2Emitted;
       tokensEarned = Math.floor(savedTons / TON_PER_TOKEN);
 
@@ -224,7 +237,7 @@ exports.processIndustryEmissions = async (req, res) => {
         );
 
         await Qexecution.queryExecute(
-          `INSERT INTO token_transactions 
+          `INSERT INTO token_transactions
            (token_id, tx_type, amount, buyer_id)
            VALUES (?, 'minted', ?, ?)`,
           [tokenInsert.insertId, tokensEarned, industry_id]
@@ -383,7 +396,7 @@ exports.mintTokens = async (req, res) => {
   }
 };
 
-// Get Tokens Owned by landowner
+// Get Tokens Owned by landowner (tokens minted from their verified projects)
 exports.getTokens = async (req, res) => {
   try {
     const owner_id = req.params.owner_id || req.query.owner_id;
@@ -391,11 +404,10 @@ exports.getTokens = async (req, res) => {
       return res.status(400).json({ status: "fail", message: "owner_id required" });
     }
     const tokens = await Qexecution.queryExecute(
-      `SELECT * FROM tokens WHERE industry_id IN (
-         SELECT i.industry_id FROM industries i
-         JOIN project_owners po ON po.registration_id = i.registration_id
-         WHERE po.owner_id = ?
-       )`,
+      `SELECT t.*, p.project_name
+       FROM tokens t
+       LEFT JOIN projects p ON t.project_id = p.project_id
+       WHERE t.owner_id = ?`,
       [owner_id]
     );
 
@@ -450,6 +462,28 @@ exports.createMarketplaceListing = async (req, res) => {
       return res.status(400).json({
         status: "fail",
         message: "owner_id, amount, price required"
+      });
+    }
+
+    // Compute available balance: minted tokens minus already-listed tokens
+    const mintedRes = await Qexecution.queryExecute(
+      `SELECT COALESCE(SUM(amount), 0) AS total_minted FROM tokens WHERE owner_id = ?`,
+      [owner_id]
+    );
+    const totalMinted = Number((mintedRes.rows || mintedRes || [])[0]?.total_minted || 0);
+
+    const listedRes = await Qexecution.queryExecute(
+      `SELECT COALESCE(SUM(amount), 0) AS total_listed FROM marketplace WHERE owner_id = ? AND status = 'open'`,
+      [owner_id]
+    );
+    const totalListed = Number((listedRes.rows || listedRes || [])[0]?.total_listed || 0);
+
+    const available = totalMinted - totalListed;
+
+    if (Number(amount) > available) {
+      return res.status(400).json({
+        status: "fail",
+        message: `Insufficient credits. You have ${available} credit(s) available to sell.`
       });
     }
 
@@ -815,5 +849,63 @@ exports.removeDbListing = async (req, res) => {
   } catch (err) {
     console.error("removeDbListing error:", err.message);
     res.status(500).json({ status: "fail", message: err.message });
+  }
+};
+
+// ── SARIMA Emission Forecast for Landowner (uses linked industry emission logs) ──
+exports.getEmissionForecast = async (req, res) => {
+  try {
+    const owner_id = req.user?.roleId;
+
+    if (!owner_id) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const industryResult = await Qexecution.queryExecute(
+      `SELECT i.industry_id
+       FROM project_owners po
+       JOIN industries i ON po.registration_id = i.registration_id
+       WHERE po.owner_id = ?`,
+      [owner_id]
+    );
+
+    const industry = (industryResult.rows || industryResult || [])[0];
+    if (!industry) {
+      return res.status(404).json({ message: "No linked industry found" });
+    }
+
+    const { industry_id } = industry;
+
+    const result = await Qexecution.queryExecute(
+      `SELECT log_date, co2_emitted FROM emission_logs WHERE industry_id = ? ORDER BY log_date ASC`,
+      [industry_id]
+    );
+    const rows = result.rows || result || [];
+
+    if (!Array.isArray(rows) || rows.length < 20) {
+      return res.status(400).json({
+        message: "Not enough data for forecasting. At least 20 emission records are required."
+      });
+    }
+
+    const emissionsSeries = rows.map(r => Number(r.co2_emitted));
+    const options = { p: 1, d: 1, q: 1, P: 1, D: 1, Q: 1, s: 7, verbose: false };
+    const model = new ARIMA(options).train(emissionsSeries);
+    const forecastArray = model.predict(7);
+
+    const today = new Date();
+    const forecastWithDates = forecastArray[0].map((val, idx) => {
+      const forecastDate = new Date(today);
+      forecastDate.setDate(today.getDate() + idx + 1);
+      return {
+        date: forecastDate.toISOString().split("T")[0],
+        predicted_co2_emitted: Number(val.toFixed(2))
+      };
+    });
+
+    res.json(forecastWithDates);
+  } catch (err) {
+    console.error("landowner getEmissionForecast error:", err.message);
+    res.status(500).json({ message: "Forecast generation failed" });
   }
 };
