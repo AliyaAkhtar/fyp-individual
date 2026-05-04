@@ -48,10 +48,16 @@ app.use((req, res, next) => {
   next();
 });
 
+// app.use(cors({
+//   origin: ['*'], 
+//   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+//   credentials: true 
+// }));
+
 app.use(cors({
-  origin: ['*'], 
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-  credentials: true 
+  origin: "*",
+  methods: ['GET','POST','PUT','DELETE','PATCH','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization']
 }));
 
 // Middleware to handle large payloads
