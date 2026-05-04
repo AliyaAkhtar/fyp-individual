@@ -963,7 +963,7 @@ exports.getLandownerEmissionDetails = async (req, res) => {
     });
   }
 };
-
+//sale
 exports.applyLandownerOffset = async (req, res) => {
   try {
     const { owner_id } = req.params;
@@ -1098,7 +1098,7 @@ exports.applyLandownerOffset = async (req, res) => {
     });
   }
 };
-
+//buy
 exports.landownerBuyCredits = async (req, res) => {
   const connection = await Qexecution.getConnection?.(); // if your pool supports transactions
 

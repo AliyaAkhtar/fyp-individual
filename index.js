@@ -12,41 +12,43 @@ const DashboardRouter = require("./Routers/DashboardRouter");
 
 let app = express();
 
-const allowedOrigins = new Set([
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-  'http://localhost:8080',
-  'http://127.0.0.1:8080',
-  'http://localhost:8081',
-  'http://127.0.0.1:8081',
-  'http://localhost:3000',
-  'https://learn-lime-three.vercel.app'
-]);
-
-const corsOptions = {
+app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (like Postman/mobile) or from allowed origins
-    // Also allow any localhost origin dynamically
-    if (!origin || allowedOrigins.has(origin) || /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) {
+    const allowedOrigins = new Set([
+      'http://localhost:5173',
+      'http://localhost:8080',
+      'http://localhost:8081',
+      'http://127.0.0.1:5173',
+      'http://127.0.0.1:8080',
+      'http://127.0.0.1:8081',
+      'http://localhost:3000',
+      'https://learn-lime-three.vercel.app'
+    ]);
+
+    // allow Postman / server calls
+    if (!origin) return callback(null, true);
+
+    // allow all your dev origins
+    if (allowedOrigins.has(origin)) {
       return callback(null, true);
     }
-    console.warn('[CORS] Blocked origin:', origin);
-    return callback(new Error('Not allowed by CORS'));
+
+    // TEMP DEV MODE: allow everything (optional)
+    return callback(null, true);
   },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
-  optionsSuccessStatus: 204
-};
+  methods: ['GET','POST','PUT','DELETE','PATCH','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization']
+}));
 
 // Middleware to enable CORS
-app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*'); 
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.setHeader('Access-Control-Allow-Credentials', 'true'); 
-  next();
-});
+// app.use((req, res, next) => {
+//   res.setHeader('Access-Control-Allow-Origin', '*'); 
+//   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH');
+//   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+//   res.setHeader('Access-Control-Allow-Credentials', 'true'); 
+//   next();
+// });
 
 // app.use(cors({
 //   origin: ['*'], 
@@ -54,11 +56,11 @@ app.use((req, res, next) => {
 //   credentials: true 
 // }));
 
-app.use(cors({
-  origin: "*",
-  methods: ['GET','POST','PUT','DELETE','PATCH','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization']
-}));
+// app.use(cors({
+//   origin: "*",
+//   methods: ['GET','POST','PUT','DELETE','PATCH','OPTIONS'],
+//   allowedHeaders: ['Content-Type','Authorization']
+// }));
 
 // Middleware to handle large payloads
 app.use(bodyParser.json({ limit: '200mb' }));
