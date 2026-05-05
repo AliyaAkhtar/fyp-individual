@@ -70,6 +70,25 @@ exports.analyzeElectricityBill = async (req, res) => {
     const imagePath = req.file.path;
 
     /* =========================
+   CHECK EXISTING BILL (NEW)
+========================= */
+    const existingBill = await Qexecution.queryExecute(
+      `SELECT bill_id 
+   FROM electricity_bills 
+   WHERE user_id = ? AND month = ?`,
+      [user_id, month]
+    );
+
+    if ((existingBill.rows || existingBill || []).length > 0) {
+      fs.unlinkSync(req.file.path); // delete uploaded image
+
+      return res.status(400).json({
+        status: "fail",
+        message: "Electricity bill for this month already processed"
+      });
+    }
+
+    /* =========================
        OCR
     ========================= */
     const { data: { text } } = await Tesseract.recognize(imagePath, "eng");
