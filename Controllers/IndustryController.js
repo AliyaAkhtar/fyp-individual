@@ -3,11 +3,28 @@ const { detectAnomaly } = require("../services/anomalyService");
 const { generateExplanation } = require("../services/genaiService");
 const { uploadJSONToIPFS } = require("../services/ipfsService");
 const ARIMA = require("arima");
+const axios = require("axios");
 const {
   buildTxData,
   enc,
 } = require("../Blockchain/contractService");
 const { emitterRegistry, greenCreditToken, marketplace } = enc;
+
+async function getEthPkrRate() {
+  try {
+    const resp = await axios.get(
+      "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=pkr",
+      { timeout: 5000 }
+    );
+    return resp.data.ethereum.pkr;
+  } catch {
+    return 280000; // fallback: ~1 ETH = 280,000 PKR
+  }
+}
+
+function pkrToWei(pkrAmount, ethPkrRate) {
+  return BigInt(Math.round((pkrAmount / ethPkrRate) * 1e18));
+}
 
 // ── Blockchain: Get tx data for registerEmitter() ────────────────────────────
 // Frontend calls this to get the tx payload, then signs & sends via MetaMask.
@@ -74,7 +91,28 @@ exports.getBuyListingTx = async (req, res) => {
     if (!listing_id) {
       return res.status(400).json({ status: "fail", message: "listing_id required" });
     }
-    const txData = await buildTxData(marketplace, "buyListing", [listing_id]);
+
+    // Look up chain_listing_id, amount, and PKR price from DB
+    const rows = await Qexecution.queryExecute(
+      `SELECT chain_listing_id, amount, price FROM marketplace WHERE order_id = ? AND status = 'open'`,
+      [listing_id]
+    );
+    const listing = (rows.rows || rows || [])[0];
+    if (!listing) {
+      return res.status(404).json({ status: "fail", message: "Listing not found or already sold" });
+    }
+    if (!listing.chain_listing_id) {
+      return res.status(400).json({ status: "fail", message: "Listing not yet confirmed on-chain" });
+    }
+
+    // Convert PKR price to Wei and calculate total ETH to send
+    const ethPkrRate = await getEthPkrRate();
+    const pricePerTokenWei = pkrToWei(listing.price, ethPkrRate);
+    const totalWei = pricePerTokenWei * BigInt(listing.amount);
+
+    const txData = await buildTxData(marketplace, "buyListing", [BigInt(listing.chain_listing_id)]);
+    txData.value = "0x" + totalWei.toString(16);
+
     res.json({ status: "success", txData });
   } catch (err) {
     console.error("getBuyListingTx error:", err.message);

@@ -14,6 +14,22 @@ require("dotenv").config();
 const PINATA_API_KEY = process.env.PINATA_API_KEY;
 const PINATA_SECRET_API_KEY = process.env.PINATA_SECRET_API_KEY;
 
+async function getEthPkrRate() {
+  try {
+    const resp = await axios.get(
+      "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=pkr",
+      { timeout: 5000 }
+    );
+    return resp.data.ethereum.pkr;
+  } catch {
+    return 280000; // fallback: ~1 ETH = 280,000 PKR
+  }
+}
+
+function pkrToWei(pkrAmount, ethPkrRate) {
+  return BigInt(Math.round((pkrAmount / ethPkrRate) * 1e18));
+}
+
 const TON_PER_TOKEN = 10;
 
 //  Get All Plantations
@@ -793,16 +809,20 @@ exports.getCreateListingTx = async (req, res) => {
 
     const marketplaceAddress = await marketplace.getAddress();
 
-    // Step 1: approve marketplace to spend tokens
+    // Convert PKR price to Wei so the contract stores ETH-denominated price
+    const ethPkrRate = await getEthPkrRate();
+    const pricePerTokenWei = pkrToWei(price_per_token, ethPkrRate);
+
+    // Step 1: approve marketplace to spend tokens (no ETH sent — only gas)
     const approveTxData = await buildTxData(greenCreditToken, "approve", [
       marketplaceAddress,
-      amount,
+      BigInt(amount),
     ]);
 
-    // Step 2: create the listing
+    // Step 2: create the listing with price in Wei
     const listingTxData = await buildTxData(marketplace, "createListing", [
-      amount,
-      price_per_token,
+      BigInt(amount),
+      pricePerTokenWei,
     ]);
 
     res.json({
