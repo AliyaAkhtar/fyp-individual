@@ -12,6 +12,9 @@ router.route('/uploadToIPFS')
 
 router.route('/processIndustry/:owner_id')
   .get(LandownerHandler.processIndustryEmissions);
+
+router.route('/predict/me')
+  .get(LandownerHandler.getEmissionForecast);
   
 router.route('/plantations/:owner_id')
   .get(LandownerHandler.getPlantation);
