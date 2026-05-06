@@ -444,9 +444,9 @@ exports.approveProject = async (req, res) => {
 
     // 5. Store tokens in DB
     await Qexecution.queryExecute(
-      `INSERT INTO tokens (project_id, owner_id, amount)
-       VALUES (?, ?, ?)`,
-      [project_id, project.owner_id, tokensToMint]
+      `INSERT INTO tokens (owner_id, amount)
+       VALUES (?, ?)`,
+      [project.owner_id, tokensToMint]
     );
 
     // 6. Response

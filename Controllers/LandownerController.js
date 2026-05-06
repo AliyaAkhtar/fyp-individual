@@ -695,6 +695,7 @@ exports.uploadProjectToIPFS = async (req, res) => {
       status: "success",
       message: "Project uploaded successfully",
       project_id: result.insertId,
+      metadataCID,
       area,
       co2_saved
     });
@@ -902,9 +903,9 @@ exports.getEmissionForecast = async (req, res) => {
     );
     const rows = result.rows || result || [];
 
-    if (!Array.isArray(rows) || rows.length < 20) {
+    if (!Array.isArray(rows) || rows.length < 22) {
       return res.status(400).json({
-        message: "Not enough data for forecasting. At least 20 emission records are required."
+        message: "Not enough data for forecasting. At least 22 emission records are required."
       });
     }
 

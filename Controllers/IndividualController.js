@@ -5,6 +5,9 @@ const axios = require("axios");
 const Qexecution = require("./query");
 // const { buildTxData, enc } = require("../Blockchain/contractService");
 // const { marketplace } = enc;
+const { ethers } = require("ethers");
+const { buildTxData, enc } = require("../Blockchain/contractService");
+const { marketplace, greenCreditToken } = enc;
 
 const path = require("path");
 
@@ -265,13 +268,23 @@ exports.calculateCarbonOffset = async (req, res) => {
     let suggestions = [];
 
     if (credits_required > 0) {
+      // const listings = await Qexecution.queryExecute(
+      //   `SELECT 
+      //     m.order_id AS listing_id,
+      //     t.amount,
+      //     m.price
+      //   FROM marketplace m
+      //   JOIN tokens t ON m.token_id = t.token_id
+      //   WHERE m.status = 'open'
+      //   ORDER BY m.price ASC`
+      // );
+
       const listings = await Qexecution.queryExecute(
         `SELECT 
           m.order_id AS listing_id,
-          t.amount,
+          m.amount,
           m.price
         FROM marketplace m
-        JOIN tokens t ON m.token_id = t.token_id
         WHERE m.status = 'open'
         ORDER BY m.price ASC`
       );
@@ -684,3 +697,44 @@ function extract(text, patterns) {
   }
   return null;
 }
+
+exports.getCreateListingTx = async (req, res) => {
+  try {
+    const { amount, price_per_token } = req.body;
+    if (!amount || !price_per_token) {
+      return res.status(400).json({
+        status: "fail",
+        message: "amount and price_per_token required",
+      });
+    }
+
+    const marketplaceAddress = await marketplace.getAddress();
+
+    // Convert decimal values to BigInt (18 decimals for token amount; wei for price)
+    const amountBN = ethers.parseUnits(String(amount), 18);
+    const priceBN = ethers.parseUnits(String(price_per_token), 18);
+    console.log("Amount BN:", amountBN.toString());
+    // Step 1: approve marketplace to spend tokens
+    const approveTxData = await buildTxData(greenCreditToken, "approve", [
+      marketplaceAddress,
+      amountBN,
+    ]);
+    console.log("Approve Tx Data:", approveTxData);
+    // Step 2: create the listing
+    const listingTxData = await buildTxData(marketplace, "createListing", [
+      amountBN,
+      priceBN,
+    ]);
+    console.log("Listing Tx Data:", listingTxData);
+
+    res.json({
+      status: "success",
+      message: "Send approveTx first, then listingTx",
+      approveTxData,
+      listingTxData,
+    });
+  } catch (err) {
+    console.error("getCreateListingTx error:", err.message);
+    res.status(500).json({ status: "fail", message: err.message });
+  }
+};

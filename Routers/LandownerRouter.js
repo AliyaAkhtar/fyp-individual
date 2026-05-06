@@ -1,6 +1,7 @@
 const LandownerHandler = require('../Controllers/LandownerController')
 // const OffsetProjectHandler = require('../Controllers/OffsetProjectController')
 const express= require('express')
+const { checkToken } = require('../auth/token_validation')
 
 const router = express.Router();
 
@@ -14,7 +15,7 @@ router.route('/processIndustry/:owner_id')
   .get(LandownerHandler.processIndustryEmissions);
 
 router.route('/predict/me')
-  .get(LandownerHandler.getEmissionForecast);
+  .get(checkToken, LandownerHandler.getEmissionForecast);
   
 router.route('/plantations/:owner_id')
   .get(LandownerHandler.getPlantation);
