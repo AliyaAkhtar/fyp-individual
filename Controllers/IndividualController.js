@@ -3,16 +3,21 @@ const multer = require("multer");
 const fs = require("fs");
 const axios = require("axios");
 const Qexecution = require("./query");
-const { ethers } = require("ethers");
-const { buildTxData, enc } = require("../Blockchain/contractService");
-const { marketplace, greenCreditToken } = enc;
+// const { buildTxData, enc } = require("../Blockchain/contractService");
+// const { marketplace } = enc;
 
-const upload = multer({ dest: "uploads/" });
+const path = require("path");
 
-// const upload = multer({ storage: multer.memoryStorage() });
+const uploadPath =
+  process.env.NODE_ENV === "production"
+    ? "/tmp"
+    : path.join(__dirname, "uploads");
+
+const upload = multer({
+  dest: uploadPath
+});
 
 exports.uploadBill = upload.single("bill");
-
 /* =========================================
    OCR + GenAI Electricity Bill Analysis
 ========================================= */
@@ -231,6 +236,7 @@ exports.analyzeElectricityBill = async (req, res) => {
     });
   }
 };
+
 
 /* =========================================
    Carbon Calculation + Credit Suggestion
@@ -669,46 +675,20 @@ ${text}
    Helpers
 ========================================= */
 
-// ── Blockchain: Get tx data for createListing(amount, price_per_token) ────────
-exports.getCreateListingTx = async (req, res) => {
-  try {
-    const { amount, price_per_token } = req.body;
-    if (!amount || !price_per_token) {
-      return res.status(400).json({
-        status: "fail",
-        message: "amount and price_per_token required",
-      });
-    }
-
-    const marketplaceAddress = await marketplace.getAddress();
-
-    // Convert decimal values to BigInt (18 decimals for token amount; wei for price)
-    const amountBN = ethers.parseUnits(String(amount), 18);
-    const priceBN = ethers.parseUnits(String(price_per_token), 18);
-
-    // Step 1: approve marketplace to spend tokens
-    const approveTxData = await buildTxData(greenCreditToken, "approve", [
-      marketplaceAddress,
-      amountBN,
-    ]);
-
-    // Step 2: create the listing
-    const listingTxData = await buildTxData(marketplace, "createListing", [
-      amountBN,
-      priceBN,
-    ]);
-
-    res.json({
-      status: "success",
-      message: "Send approveTx first, then listingTx",
-      approveTxData,
-      listingTxData,
-    });
-  } catch (err) {
-    console.error("getCreateListingTx error:", err.message);
-    res.status(500).json({ status: "fail", message: err.message });
-  }
-};
+// ── Blockchain: Get tx data for buyListing(listingId) ────────────────────────
+// exports.getBuyListingTx = async (req, res) => {
+//   try {
+//     const { listing_id } = req.body;
+//     if (!listing_id) {
+//       return res.status(400).json({ status: "fail", message: "listing_id required" });
+//     }
+//     const txData = await buildTxData(marketplace, "buyListing", [listing_id]);
+//     res.json({ status: "success", txData });
+//   } catch (err) {
+//     console.error("getBuyListingTx error:", err.message);
+//     res.status(500).json({ status: "fail", message: err.message });
+//   }
+// };
 
 function clean(text) {
   return text
@@ -724,22 +704,3 @@ function extract(text, patterns) {
   }
   return null;
 }
-
-// Fix: Explicitly include all functions in module.exports
-const uploadBill = exports.uploadBill;
-const analyzeElectricityBill = exports.analyzeElectricityBill;
-const calculateCarbonOffset = exports.calculateCarbonOffset;
-const viewMarketplace = exports.viewMarketplace;
-const createSellOrderIndividual = exports.createSellOrderIndividual;
-const getIndividualFullSummary = exports.getIndividualFullSummary;
-const getCreateListingTx = exports.getCreateListingTx;
-
-module.exports = {
-  uploadBill,
-  analyzeElectricityBill,
-  calculateCarbonOffset,
-  viewMarketplace,
-  createSellOrderIndividual,
-  getIndividualFullSummary,
-  getCreateListingTx
-};
