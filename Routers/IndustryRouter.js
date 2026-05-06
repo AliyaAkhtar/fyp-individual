@@ -3,17 +3,23 @@ const IndustryController = require("../Controllers/IndustryController");
 
 const router = express.Router();
 
-router.route('/emissions')
-  .post(IndustryController.reportEmissions);
+// router.route('/emissions')
+//   .post(IndustryController.reportEmissions);
 
-router.route('/emissions/details')
-  .get(IndustryController.getEmissionDetails);
+router.route('/processIndustry/:industry_id')
+  .get(IndustryController.processIndustryEmissions);
 
-router.route('/credits')
-  .get(IndustryController.getOwnedCredits);
+router.route('/dashboard/:industry_id')
+  .get(IndustryController.getIndustryDashboard);
+
+router.route('/listing/:industry_id')
+  .get(IndustryController.getMyListings);
 
 router.route('/marketplace')
   .get(IndustryController.viewMarketplace);
+
+router.route('/marketplace/sell/:industry_id')
+  .post(IndustryController.createSellOrderIndustry)
 
 router.route('/predict/:industryId')
   .get(IndustryController.getEmissionForecast);
