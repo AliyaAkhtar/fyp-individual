@@ -114,8 +114,11 @@ exports.getBuyListingTx = async (req, res) => {
     const amountScaled = BigInt(Math.round(Number(listing.amount) * 1_000_000));
     const totalWei = (pricePerTokenWei * amountScaled) / SCALE;
 
-    const txData = await buildTxData(marketplace, "buyListing", [BigInt(listing.chain_listing_id)]);
-    txData.value = "0x" + totalWei.toString(16);
+    const txData = {
+      to: marketplace,
+      value: "0x" + totalWei.toString(16),
+      data: "0x"
+    };
 
     res.json({ status: "success", txData });
   } catch (err) {
