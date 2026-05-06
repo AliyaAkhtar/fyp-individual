@@ -68,6 +68,14 @@ async function getIndustryId(wallet) {
   return rows.length ? rows[0].industry_id : null;
 }
 
+async function getNormalUserId(wallet) {
+  const [rows] = await Qexecution.queryExecute(
+    `SELECT user_id FROM normal_users WHERE wallet_address = ?`,
+    [wallet]
+  );
+  return rows.length ? rows[0].user_id : null;
+}
+
 // ── Event Listeners ───────────────────────────────────────────────────────────
 
 offsetRegistry.on("ProjectRegistered", async (projectId, ownerWallet, metadataCID, event) => {
@@ -141,21 +149,40 @@ emitterRegistry.on("EmissionsOffset", async (emitterWallet, amount, event) => {
 marketplace.on("ListingCreated", async (orderId, sellerWallet, tokenId, amount, price, event) => {
   try {
     const timestamp = await getBlockTimestamp(event);
-    const ownerId = await getProjectOwnerId(sellerWallet);
-    if (!ownerId) return;
+    const chainId = orderId.toString();
 
-    await Qexecution.queryExecute(
-      `INSERT IGNORE INTO marketplace
-       (order_id, chain_listing_id, registration_id, order_type, amount, price, status, created_at)
-       VALUES (?, ?, ?, 'sell', ?, ?, 'open', FROM_UNIXTIME(?))`,
-      [orderId.toString(), orderId.toString(), ownerId, amount.toString(), price.toString(), timestamp]
-    );
-    // Also update any preliminary row (created by getCreateListingTx) that matches amount+price
-    await Qexecution.queryExecute(
-      `UPDATE marketplace SET chain_listing_id = ? WHERE chain_listing_id IS NULL AND amount = ? AND price = ? AND status = 'open' ORDER BY order_id DESC LIMIT 1`,
-      [orderId.toString(), amount.toString(), price.toString()]
-    );
-    console.log("[EventListener] ListingCreated synced:", orderId.toString());
+    // Landowner / project-owner path
+    const ownerId = await getProjectOwnerId(sellerWallet);
+    if (ownerId) {
+      await Qexecution.queryExecute(
+        `INSERT IGNORE INTO marketplace
+         (order_id, chain_listing_id, registration_id, order_type, amount, price, status, created_at)
+         VALUES (?, ?, ?, 'sell', ?, ?, 'open', FROM_UNIXTIME(?))`,
+        [chainId, chainId, ownerId, amount.toString(), price.toString(), timestamp]
+      );
+      // Landowner frontend creates a preliminary DB row before signing; the row stores
+      // amount+price in the same wei units the contract uses, so we can match on them.
+      await Qexecution.queryExecute(
+        `UPDATE marketplace SET chain_listing_id = ? WHERE chain_listing_id IS NULL AND amount = ? AND price = ? AND status = 'open' ORDER BY order_id DESC LIMIT 1`,
+        [chainId, amount.toString(), price.toString()]
+      );
+      console.log("[EventListener] ListingCreated (owner) synced:", chainId);
+      return;
+    }
+
+    // Individual-user path — match by user_id, not by amount/price (units differ: DB stores
+    // raw decimals & PKR, the contract stores wei-scaled values so they never match directly).
+    const normalUserId = await getNormalUserId(sellerWallet);
+    if (normalUserId) {
+      await Qexecution.queryExecute(
+        `UPDATE marketplace SET chain_listing_id = ? WHERE chain_listing_id IS NULL AND user_id = ? AND status = 'open' ORDER BY order_id DESC LIMIT 1`,
+        [chainId, normalUserId]
+      );
+      console.log("[EventListener] ListingCreated (individual) synced:", chainId);
+      return;
+    }
+
+    console.warn("[EventListener] ListingCreated: seller wallet not found in DB:", sellerWallet);
   } catch (err) {
     console.error("[EventListener] ListingCreated error:", err.message);
   }

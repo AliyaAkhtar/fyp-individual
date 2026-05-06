@@ -504,9 +504,9 @@ exports.createMarketplaceListing = async (req, res) => {
     }
 
     const result = await Qexecution.queryExecute(
-      `INSERT INTO marketplace (owner_id, amount, price, status)
-       VALUES (?, ?, ?, 'open')`,
-      [owner_id, amount, price]
+      `INSERT INTO marketplace (owner_id, amount, price, status, chain_listing_id)
+       VALUES (?, ?, ?, 'open', ?)`,
+      [owner_id, amount, price, 1]
     );
 
     res.json({
