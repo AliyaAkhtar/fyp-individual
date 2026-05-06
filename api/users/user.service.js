@@ -216,7 +216,7 @@ module.exports = {
                                 case 'normal_user':
                                     roleQuery = `
                                     INSERT INTO normal_users 
-                                    (registration_id, name, household_size, house_area_sqm)
+                                    (registration_id, name, household_size, house_area)
                                     VALUES (?, ?, ?, ?)`;
                                     roleValues = [
                                         registrationId,
