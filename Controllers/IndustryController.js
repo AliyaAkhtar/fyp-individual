@@ -105,10 +105,14 @@ exports.getBuyListingTx = async (req, res) => {
       return res.status(400).json({ status: "fail", message: "Listing not yet confirmed on-chain" });
     }
 
-    // Convert PKR price to Wei and calculate total ETH to send
+    // Convert PKR price to Wei and calculate total ETH to send.
+    // listing.amount may be a decimal (e.g. 0.12) from the individual portal — BigInt() rejects
+    // non-integers, so scale by 1e6 and divide to keep integer arithmetic throughout.
     const ethPkrRate = await getEthPkrRate();
     const pricePerTokenWei = pkrToWei(listing.price, ethPkrRate);
-    const totalWei = pricePerTokenWei * BigInt(listing.amount);
+    const SCALE = 1_000_000n;
+    const amountScaled = BigInt(Math.round(Number(listing.amount) * 1_000_000));
+    const totalWei = (pricePerTokenWei * amountScaled) / SCALE;
 
     const txData = await buildTxData(marketplace, "buyListing", [BigInt(listing.chain_listing_id)]);
     txData.value = "0x" + totalWei.toString(16);

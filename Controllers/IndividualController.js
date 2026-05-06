@@ -3,21 +3,16 @@ const multer = require("multer");
 const fs = require("fs");
 const axios = require("axios");
 const Qexecution = require("./query");
-// const { buildTxData, enc } = require("../Blockchain/contractService");
-// const { marketplace } = enc;
+const { ethers } = require("ethers");
+const { buildTxData, enc } = require("../Blockchain/contractService");
+const { marketplace, greenCreditToken } = enc;
 
-const path = require("path");
+const upload = multer({ dest: "uploads/" });
 
-const uploadPath =
-  process.env.NODE_ENV === "production"
-    ? "/tmp"
-    : path.join(__dirname, "uploads");
-
-const upload = multer({
-  dest: uploadPath
-});
+// const upload = multer({ storage: multer.memoryStorage() });
 
 exports.uploadBill = upload.single("bill");
+
 /* =========================================
    OCR + GenAI Electricity Bill Analysis
 ========================================= */
@@ -68,6 +63,25 @@ exports.analyzeElectricityBill = async (req, res) => {
       .slice(0, 10);
 
     const imagePath = req.file.path;
+
+    /* =========================
+   CHECK EXISTING BILL (NEW)
+========================= */
+    const existingBill = await Qexecution.queryExecute(
+      `SELECT bill_id 
+   FROM electricity_bills 
+   WHERE user_id = ? AND month = ?`,
+      [user_id, month]
+    );
+
+    if ((existingBill.rows || existingBill || []).length > 0) {
+      fs.unlinkSync(req.file.path); // delete uploaded image
+
+      return res.status(400).json({
+        status: "fail",
+        message: "Electricity bill for this month already processed"
+      });
+    }
 
     /* =========================
        OCR
@@ -370,13 +384,21 @@ exports.viewMarketplace = async (req, res) => {
 exports.createSellOrderIndividual = async (req, res) => {
   try {
     const { user_id } = req.params;
-    const { amount, price } = req.body;
+    const { amount, price, wallet_address } = req.body;
 
     if (!user_id || !amount || !price) {
       return res.status(400).json({
         status: "fail",
         message: "user_id, amount, price required"
       });
+    }
+
+    // Persist wallet so the ListingCreated event listener can match this user
+    if (wallet_address) {
+      await Qexecution.queryExecute(
+        `UPDATE normal_users SET wallet_address = ? WHERE user_id = ?`,
+        [wallet_address.toLowerCase(), user_id]
+      );
     }
 
     if (amount <= 0 || price <= 0) {
@@ -429,9 +451,9 @@ exports.createSellOrderIndividual = async (req, res) => {
     ========================= */
     await Qexecution.queryExecute(
       `INSERT INTO marketplace
-       (user_id, order_type, amount, price, status, created_at)
-       VALUES (?, 'sell', ?, ?, 'open', NOW())`,
-      [user_id, amount, price]
+       (user_id, order_type, amount, price, status, created_at, chain_listing_id)
+       VALUES (?, 'sell', ?, ?, 'open', NOW(), ?)`,
+      [user_id, amount, price, 1]
     );
 
     /* =========================
@@ -655,20 +677,48 @@ ${text}
    Helpers
 ========================================= */
 
-// ── Blockchain: Get tx data for buyListing(listingId) ────────────────────────
-// exports.getBuyListingTx = async (req, res) => {
-//   try {
-//     const { listing_id } = req.body;
-//     if (!listing_id) {
-//       return res.status(400).json({ status: "fail", message: "listing_id required" });
-//     }
-//     const txData = await buildTxData(marketplace, "buyListing", [listing_id]);
-//     res.json({ status: "success", txData });
-//   } catch (err) {
-//     console.error("getBuyListingTx error:", err.message);
-//     res.status(500).json({ status: "fail", message: err.message });
-//   }
-// };
+// ── Blockchain: Get tx data for createListing(amount, price_per_token) ────────
+exports.getCreateListingTx = async (req, res) => {
+  try {
+    const { amount, price_per_token } = req.body;
+    if (!amount || !price_per_token) {
+      return res.status(400).json({
+        status: "fail",
+        message: "amount and price_per_token required",
+      });
+    }
+
+    const marketplaceAddress = await marketplace.getAddress();
+
+    // Convert decimal values to BigInt (18 decimals for token amount; wei for price)
+    const amountBN = ethers.parseUnits(String(amount), 18);
+    const priceBN = ethers.parseUnits(String(price_per_token), 18);
+
+    // Step 1: approve marketplace to spend tokens
+    const approveTxData = await buildTxData(greenCreditToken, "approve", [
+      marketplaceAddress,
+      amountBN,
+    ]);
+
+    // Step 2: create the listing
+    const listingTxData = await buildTxData(marketplace, "createListing", [
+      amountBN,
+      priceBN,
+    ]);
+
+    console.log(listingTxData)
+
+    res.json({
+      status: "success",
+      message: "Send approveTx first, then listingTx",
+      approveTxData,
+      listingTxData,
+    });
+  } catch (err) {
+    console.error("getCreateListingTx error:", err.message);
+    res.status(500).json({ status: "fail", message: err.message });
+  }
+};
 
 function clean(text) {
   return text
@@ -684,3 +734,22 @@ function extract(text, patterns) {
   }
   return null;
 }
+
+// Fix: Explicitly include all functions in module.exports
+const uploadBill = exports.uploadBill;
+const analyzeElectricityBill = exports.analyzeElectricityBill;
+const calculateCarbonOffset = exports.calculateCarbonOffset;
+const viewMarketplace = exports.viewMarketplace;
+const createSellOrderIndividual = exports.createSellOrderIndividual;
+const getIndividualFullSummary = exports.getIndividualFullSummary;
+const getCreateListingTx = exports.getCreateListingTx;
+
+module.exports = {
+  uploadBill,
+  analyzeElectricityBill,
+  calculateCarbonOffset,
+  viewMarketplace,
+  createSellOrderIndividual,
+  getIndividualFullSummary,
+  getCreateListingTx
+};
