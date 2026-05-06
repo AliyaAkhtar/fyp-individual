@@ -7,12 +7,18 @@ const { ethers } = require("ethers");
 const { buildTxData, enc } = require("../Blockchain/contractService");
 const { marketplace, greenCreditToken } = enc;
 
-const upload = multer({ dest: "uploads/" });
+const path = require("path");
 
-// const upload = multer({ storage: multer.memoryStorage() });
+const uploadPath =
+  process.env.NODE_ENV === "production"
+    ? "/tmp"
+    : path.join(__dirname, "uploads");
+
+const upload = multer({
+  dest: uploadPath
+});
 
 exports.uploadBill = upload.single("bill");
-
 /* =========================================
    OCR + GenAI Electricity Bill Analysis
 ========================================= */
@@ -231,7 +237,6 @@ exports.analyzeElectricityBill = async (req, res) => {
     });
   }
 };
-
 
 /* =========================================
    Carbon Calculation + Credit Suggestion
