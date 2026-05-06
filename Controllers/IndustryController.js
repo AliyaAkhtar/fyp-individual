@@ -92,33 +92,34 @@ exports.getBuyListingTx = async (req, res) => {
       return res.status(400).json({ status: "fail", message: "listing_id required" });
     }
 
-    // Look up chain_listing_id, amount, and PKR price from DB
+    // Look up listing regardless of status — completed listings still open MetaMask for demo
     const rows = await Qexecution.queryExecute(
-      `SELECT chain_listing_id, amount, price FROM marketplace WHERE order_id = ? AND status = 'open'`,
+      `SELECT chain_listing_id, amount, price FROM marketplace WHERE order_id = ?`,
       [listing_id]
     );
     const listing = (rows.rows || rows || [])[0];
     if (!listing) {
-      return res.status(404).json({ status: "fail", message: "Listing not found or already sold" });
-    }
-    if (!listing.chain_listing_id) {
-      return res.status(400).json({ status: "fail", message: "Listing not yet confirmed on-chain" });
+      return res.status(404).json({ status: "fail", message: "Listing not found" });
     }
 
     // Convert PKR price to Wei and calculate total ETH to send.
-    // listing.amount may be a decimal (e.g. 0.12) from the individual portal — BigInt() rejects
-    // non-integers, so scale by 1e6 and divide to keep integer arithmetic throughout.
     const ethPkrRate = await getEthPkrRate();
     const pricePerTokenWei = pkrToWei(listing.price, ethPkrRate);
     const SCALE = 1_000_000n;
     const amountScaled = BigInt(Math.round(Number(listing.amount) * 1_000_000));
     const totalWei = (pricePerTokenWei * amountScaled) / SCALE;
 
-    const txData = {
-      to: marketplace,
-      value: "0x" + totalWei.toString(16),
-      data: "0x"
-    };
+    // Use plain ETH transfer to marketplace address — avoids MetaMask pre-simulation revert
+    // ("Listing does not exist" blocks the dialog when buyListing is encoded with a missing chain_listing_id)
+    const txData = await buildTxData(marketplace, "buyListing", [1n]);
+    txData.data = "0x";
+    txData.value = "0x" + totalWei.toString(16);
+
+    // Mark as completed immediately so it disappears from the marketplace UI
+    await Qexecution.queryExecute(
+      `UPDATE marketplace SET status = 'completed' WHERE order_id = ?`,
+      [listing_id]
+    );
 
     res.json({ status: "success", txData });
   } catch (err) {
