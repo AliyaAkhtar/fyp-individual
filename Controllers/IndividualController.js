@@ -232,6 +232,7 @@ exports.analyzeElectricityBill = async (req, res) => {
   }
 };
 
+
 /* =========================================
    Carbon Calculation + Credit Suggestion
 ========================================= */
